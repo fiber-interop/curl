@@ -1,0 +1,73 @@
+<?php
+
+namespace async\curl;
+
+/**
+ * The generic driver: one curl_multi handle per process, polled by one async\go() task.
+ *
+ * PHP exposes no socket for a curl_multi handle, so async\readable() cannot be used; the poller
+ * calls curl_multi_exec() and sleeps between rounds, 1 ms after activity backing off to 10 ms.
+ */
+final class MultiDriver implements Driver
+{
+    private \CurlMultiHandle $multi;
+    /** @var array<int, array{\CurlHandle, Transfer}> */
+    private array $transfers = [];
+    private bool $polling = false;
+
+    public function __construct()
+    {
+        $this->multi = \curl_multi_init();
+    }
+
+    public function start(\CurlHandle $h): object
+    {
+        $t = new Transfer();
+        $id = \spl_object_id($h);
+        if (isset($this->transfers[$id])) {
+            throw new \LogicException('This curl handle already has a transfer in progress');
+        }
+        $this->transfers[$id] = [$h, $t];
+        \curl_multi_add_handle($this->multi, $h);
+        \curl_multi_exec($this->multi, $running);   // begin now: resolve DNS, connect
+        $this->collect();
+        if ($this->transfers !== [] && !$this->polling) {
+            $this->polling = true;
+            \async\go($this->poll(...));
+        }
+        return $t;
+    }
+
+    private function poll(): void
+    {
+        $interval = 0.001;
+        try {
+            while ($this->transfers !== []) {
+                \async\sleep($interval);
+                \curl_multi_exec($this->multi, $running);
+                $interval = $this->collect() ? 0.001 : \min(0.010, $interval * 1.5);
+            }
+        } finally {
+            $this->polling = false;
+        }
+    }
+
+    /** Settle finished transfers; returns whether any finished. */
+    private function collect(): bool
+    {
+        $any = false;
+        while ($info = \curl_multi_info_read($this->multi)) {
+            $h = $info['handle'];
+            $id = \spl_object_id($h);
+            [, $t] = $this->transfers[$id];
+            unset($this->transfers[$id]);
+            // curl_multi_info_read() already set curl_errno()/curl_error() on $h.
+            $ok = $info['result'] === \CURLE_OK;
+            $content = \curl_multi_getcontent($h);
+            \curl_multi_remove_handle($this->multi, $h);
+            $t->resolve(!$ok ? false : ($content ?? true));
+            $any = true;
+        }
+        return $any;
+    }
+}
