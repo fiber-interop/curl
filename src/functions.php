@@ -54,8 +54,11 @@ function setup(Driver $driver): void
 }
 
 /**
- * Offer a native driver; called by adapter packages from their Composer `files` autoload,
- * guarded by interface_exists(\async\curl\Driver::class, false). Nothing is instantiated here.
+ * Offer a driver candidate: a thin wrapper over Registry::$candidates. Nothing is instantiated
+ * here. Adapter packages do not call this from their Composer `files` autoload, because the order
+ * in which packages' files load is not guaranteed; they write Registry::$candidates directly,
+ * guarded by interface_exists(\async\curl\Driver::class) (autoload on). Applications and
+ * packages loaded later may call register().
  *
  * @param callable(): Driver $factory
  */
