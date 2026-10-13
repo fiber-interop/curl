@@ -7,18 +7,18 @@ namespace async\curl;
  *
  * PHP exposes no socket for a curl_multi handle, so async\readable() cannot be used; the poller
  * calls curl_multi_exec() and sleeps between rounds, 1 ms after activity backing off to 10 ms.
+ *
+ * The multi handle is created on the first start(), i.e. inside a task: with Swoole's native-curl
+ * hook, curl_multi_init() returns a coroutine multi handle only when called in a coroutine, and
+ * only those accept hooked easy handles. A coroutine multi handle is not tied to the coroutine
+ * that created it (only curl_multi_select() binds one), so the poller task can drive it.
  */
 final class MultiDriver implements Driver
 {
-    private \CurlMultiHandle $multi;
+    private ?\CurlMultiHandle $multi = null;
     /** @var array<int, array{\CurlHandle, Transfer}> */
     private array $transfers = [];
     private bool $polling = false;
-
-    public function __construct()
-    {
-        $this->multi = \curl_multi_init();
-    }
 
     public function start(\CurlHandle $h): object
     {
@@ -27,6 +27,7 @@ final class MultiDriver implements Driver
         if (isset($this->transfers[$id])) {
             throw new \LogicException('This curl handle already has a transfer in progress');
         }
+        $this->multi ??= \curl_multi_init();
         $this->transfers[$id] = [$h, $t];
         \curl_multi_add_handle($this->multi, $h);
         \curl_multi_exec($this->multi, $running);   // begin now: resolve DNS, connect

@@ -95,3 +95,9 @@ The suite starts a local `php -S` fixture (16 workers), so no network is needed.
 FI_RUNTIME=amp vendor/bin/phpunit
 FI_RUNTIME=phasync FI_DRIVER=native php -d extension=phasync.so vendor/bin/phpunit
 ```
+
+## Swoole with native curl
+
+On a Swoole built with `--enable-swoole-curl`, curl handles must be created with `curl_init()` inside
+a coroutine (inside `async\run()`): Swoole's hook rejects handles created outside one ("The given
+handle is not initialized in coroutine"). This applies to both the native and the generic driver.

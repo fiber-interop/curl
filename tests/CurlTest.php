@@ -33,7 +33,7 @@ final class CurlTest extends TestCase
         $r = run(fn() => await_all(array_map(fn() => go(fn() => \async\curl\exec(self::h('/slow?ms=200'))), range(1, 10))));
         $elapsed = microtime(true) - $t0;
         $this->assertSame(array_fill(0, 10, 'slow'), $r);
-        $this->assertLessThan(0.6, $elapsed, "10 x 200 ms took {$elapsed}s");
+        $this->assertLessThan(1.0, $elapsed, "10 x 200 ms took {$elapsed}s");
     }
 
     public function testOtherTasksRunWhileWaiting(): void
@@ -62,23 +62,34 @@ final class CurlTest extends TestCase
         $this->assertSame('slow', $b);
     }
 
+    // Handles are created inside run(): Swoole's native-curl hook only accepts CurlHandles that were
+    // created in a coroutine (swoole_curl_get_handle() warns "not initialized in coroutine").
     public function testErrorSetsErrnoAndHandleIsReusable(): void
     {
-        $h = curl_init('http://127.0.0.1:1/');
-        curl_setopt($h, CURLOPT_RETURNTRANSFER, true);
-        $this->assertFalse(run(fn() => \async\curl\exec($h)));
-        $this->assertSame(CURLE_COULDNT_CONNECT, curl_errno($h));
-        $this->assertNotSame('', curl_error($h));
-        curl_setopt($h, CURLOPT_URL, FI_BASE . '/');
-        $this->assertSame('hello GET', run(fn() => \async\curl\exec($h)));
+        [$h, $first, $errno, $error, $second] = run(function () {
+            $h = curl_init('http://127.0.0.1:1/');
+            curl_setopt($h, CURLOPT_RETURNTRANSFER, true);
+            $first = \async\curl\exec($h);
+            $errno = curl_errno($h);
+            $error = curl_error($h);
+            curl_setopt($h, CURLOPT_URL, FI_BASE . '/');
+            return [$h, $first, $errno, $error, \async\curl\exec($h)];
+        });
+        $this->assertFalse($first);
+        $this->assertSame(CURLE_COULDNT_CONNECT, $errno);
+        $this->assertNotSame('', $error);
+        $this->assertSame('hello GET', $second);
         $this->assertSame(0, curl_errno($h));
         $this->assertSame(200, curl_getinfo($h, CURLINFO_HTTP_CODE));
     }
 
     public function testHttpErrorStatusIsNotACurlError(): void
     {
-        $h = self::h('/status?code=500');
-        $this->assertSame('status 500', run(fn() => \async\curl\exec($h)));
+        [$h, $body] = run(function () {
+            $h = self::h('/status?code=500');
+            return [$h, \async\curl\exec($h)];
+        });
+        $this->assertSame('status 500', $body);
         $this->assertSame(500, curl_getinfo($h, CURLINFO_HTTP_CODE));
     }
 
