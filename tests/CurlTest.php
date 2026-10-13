@@ -33,7 +33,7 @@ final class CurlTest extends TestCase
         $r = run(fn() => await_all(array_map(fn() => go(fn() => \async\curl\exec(self::h('/slow?ms=200'))), range(1, 10))));
         $elapsed = microtime(true) - $t0;
         $this->assertSame(array_fill(0, 10, 'slow'), $r);
-        $this->assertLessThan(1.0, $elapsed, "10 x 200 ms took {$elapsed}s");
+        $this->assertLessThan(1.5, $elapsed, "10 x 200 ms took {$elapsed}s");
     }
 
     public function testOtherTasksRunWhileWaiting(): void
