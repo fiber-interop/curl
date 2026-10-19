@@ -1,11 +1,11 @@
 <?php
 
-namespace async\curl;
+namespace fiber\curl;
 
 /**
- * The generic driver: one curl_multi handle per process, polled by one async\go() task.
+ * The generic driver: one curl_multi handle per process, polled by one fiber\go() task.
  *
- * PHP exposes no socket for a curl_multi handle, so async\readable() cannot be used; the poller
+ * PHP exposes no socket for a curl_multi handle, so fiber\readable() cannot be used; the poller
  * calls curl_multi_exec() and sleeps between rounds, 1 ms after activity backing off to 10 ms.
  *
  * The multi handle is created on the first start(), i.e. inside a task: with Swoole's native-curl
@@ -34,7 +34,7 @@ final class MultiDriver implements Driver
         $this->collect();
         if ($this->transfers !== [] && !$this->polling) {
             $this->polling = true;
-            \async\go($this->poll(...));
+            \fiber\go($this->poll(...));
         }
         return $t;
     }
@@ -44,7 +44,7 @@ final class MultiDriver implements Driver
         $interval = 0.001;
         try {
             while ($this->transfers !== []) {
-                \async\sleep($interval);
+                \fiber\sleep($interval);
                 \curl_multi_exec($this->multi, $running);
                 $interval = $this->collect() ? 0.001 : \min(0.010, $interval * 1.5);
             }

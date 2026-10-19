@@ -1,9 +1,9 @@
 <?php
 
-namespace async\curl;
+namespace fiber\curl;
 
 /**
- * The awaitable returned by MultiDriver::start(): a minimal then-able, which async\await()
+ * The awaitable returned by MultiDriver::start(): a minimal then-able, which fiber\await()
  * accepts on every adapter. Settles once; then() after settling calls back immediately.
  */
 final class Transfer

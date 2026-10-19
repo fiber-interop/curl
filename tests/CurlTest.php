@@ -1,9 +1,9 @@
 <?php
 
-namespace async\curl\Tests;
+namespace fiber\curl\Tests;
 
 use PHPUnit\Framework\TestCase;
-use function async\{run, go, await, await_all};
+use function fiber\{run, go, await, await_all};
 
 final class CurlTest extends TestCase
 {
@@ -16,21 +16,21 @@ final class CurlTest extends TestCase
 
     public function testOutsideRunBehavesLikeCurlExec(): void
     {
-        $this->assertSame('hello GET', \async\curl\exec(self::h('/')));
+        $this->assertSame('hello GET', \fiber\curl\exec(self::h('/')));
         $h = self::h('/status?code=404');
-        $this->assertSame('status 404', \async\curl\exec($h));
+        $this->assertSame('status 404', \fiber\curl\exec($h));
         $this->assertSame(404, curl_getinfo($h, CURLINFO_HTTP_CODE));
     }
 
     public function testExecInsideRun(): void
     {
-        $this->assertSame('hello GET', run(fn() => \async\curl\exec(self::h('/'))));
+        $this->assertSame('hello GET', run(fn() => \fiber\curl\exec(self::h('/'))));
     }
 
     public function testOverlap(): void
     {
         $t0 = microtime(true);
-        $r = run(fn() => await_all(array_map(fn() => go(fn() => \async\curl\exec(self::h('/slow?ms=200'))), range(1, 10))));
+        $r = run(fn() => await_all(array_map(fn() => go(fn() => \fiber\curl\exec(self::h('/slow?ms=200'))), range(1, 10))));
         $elapsed = microtime(true) - $t0;
         $this->assertSame(array_fill(0, 10, 'slow'), $r);
         $this->assertLessThan(1.5, $elapsed, "10 x 200 ms took {$elapsed}s");
@@ -41,9 +41,9 @@ final class CurlTest extends TestCase
         $ticks = 0;
         run(function () use (&$ticks) {
             $ticker = go(function () use (&$ticks) {
-                for ($i = 0; $i < 5; $i++) { \async\sleep(0.02); $ticks++; }
+                for ($i = 0; $i < 5; $i++) { \fiber\sleep(0.02); $ticks++; }
             });
-            \async\curl\exec(self::h('/slow?ms=200'));
+            \fiber\curl\exec(self::h('/slow?ms=200'));
             await($ticker);
         });
         $this->assertSame(5, $ticks);
@@ -52,8 +52,8 @@ final class CurlTest extends TestCase
     public function testStartIsEagerAndRepeatableAwait(): void
     {
         [$a, $b] = run(function () {
-            $t = \async\curl\start(self::h('/slow?ms=100'));
-            \async\sleep(0.15);      // transfer progresses meanwhile
+            $t = \fiber\curl\start(self::h('/slow?ms=100'));
+            \fiber\sleep(0.15);      // transfer progresses meanwhile
             $t0 = microtime(true);
             $a = await($t);
             return [$a, await($t), microtime(true) - $t0];
@@ -69,11 +69,11 @@ final class CurlTest extends TestCase
         [$h, $first, $errno, $error, $second] = run(function () {
             $h = curl_init('http://127.0.0.1:1/');
             curl_setopt($h, CURLOPT_RETURNTRANSFER, true);
-            $first = \async\curl\exec($h);
+            $first = \fiber\curl\exec($h);
             $errno = curl_errno($h);
             $error = curl_error($h);
             curl_setopt($h, CURLOPT_URL, FI_BASE . '/');
-            return [$h, $first, $errno, $error, \async\curl\exec($h)];
+            return [$h, $first, $errno, $error, \fiber\curl\exec($h)];
         });
         $this->assertFalse($first);
         $this->assertSame(CURLE_COULDNT_CONNECT, $errno);
@@ -87,7 +87,7 @@ final class CurlTest extends TestCase
     {
         [$h, $body] = run(function () {
             $h = self::h('/status?code=500');
-            return [$h, \async\curl\exec($h)];
+            return [$h, \fiber\curl\exec($h)];
         });
         $this->assertSame('status 500', $body);
         $this->assertSame(500, curl_getinfo($h, CURLINFO_HTTP_CODE));
@@ -96,7 +96,7 @@ final class CurlTest extends TestCase
     public function testWithoutReturnTransferBodyIsEchoed(): void
     {
         ob_start();
-        $r = run(fn() => \async\curl\exec(self::h('/', false)));
+        $r = run(fn() => \fiber\curl\exec(self::h('/', false)));
         $out = ob_get_clean();
         $this->assertTrue($r);
         $this->assertSame('hello GET', $out);
@@ -105,11 +105,11 @@ final class CurlTest extends TestCase
     public function testTimedOutAwaitLeavesTransferRunning(): void
     {
         [$timedOut, $late] = run(function () {
-            $t = \async\curl\start(self::h('/slow?ms=200'));
+            $t = \fiber\curl\start(self::h('/slow?ms=200'));
             try {
                 await($t, 0.05);
                 $timedOut = false;
-            } catch (\async\TimeoutException) {
+            } catch (\fiber\TimeoutException) {
                 $timedOut = true;
             }
             return [$timedOut, await($t)];
